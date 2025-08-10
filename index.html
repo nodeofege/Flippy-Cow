@@ -247,6 +247,13 @@
     return false;
   }
 
+  function drawFooter() {
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "white";
+    ctx.textAlign = "right";
+    ctx.fillText("made by nodeofege", WIDTH - 10, HEIGHT - 10);
+  }
+
   function gameLoop() {
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
@@ -284,6 +291,8 @@
     drawPipes();
     drawCow();
     drawParticles();
+
+    drawFooter();
 
     if(collision()) {
       gameOver = true;
@@ -327,3 +336,4 @@
 </script>
 </body>
 </html>
+
