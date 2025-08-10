@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flippy Cow - Optimized without Grass</title>
+<style>
+  body {
+    margin: 0;
+    background: #87ceeb;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+  }
+  #game {
+    position: relative;
+    width: 360px;
+    height: 640px;
+    background: linear-gradient(to bottom, #a3d9a5, #5a8f56);
+    border-radius: 12px;
+    box-shadow: 0 0 15px #2e6500;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    border-radius: 10px;
+    background: transparent;
+  }
+  #score {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 40px;
+    font-weight: 900;
+    color: white;
+    text-shadow: 2px 2px 4px #355a09;
+    user-select: none;
+  }
+  #message {
+    position: absolute;
+    top: 280px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 28px;
+    color: #d32f2f;
+    text-shadow: 1px 1px 2px #fff;
+    display: none;
+    user-select: none;
+  }
+  #startBtn {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 14px 40px;
+    font-size: 22px;
+    font-weight: bold;
+    border: none;
+    border-radius: 25px;
+    background: #76a621;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 5px 10px #476214aa;
+    user-select: none;
+  }
+  #startBtn:hover {
+    background: #a8d157;
+    color: #325400;
+  }
+</style>
+</head>
+<body>
+  <div id="game">
+    <canvas id="canvas" width="360" height="640"></canvas>
+    <div id="score">0</div>
+    <div id="message">Game Over!</div>
+    <button id="startBtn">Start</button>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const scoreDisplay = document.getElementById('score');
+  const message = document.getElementById('message');
+  const startBtn = document.getElementById('startBtn');
+
+  const WIDTH = canvas.width;
+  const HEIGHT = canvas.height;
+
+  const cowImg = new Image();
+  cowImg.src = 'cow.png';
+
+  const jumpSound = new Audio('jump.wav');
+  const pointSound = new Audio('point.wav');
+  const hitSound = new Audio('hit.wav');
+
+  let cow = {
+    x: 80,
+    y: HEIGHT / 2,
+    width: 70,
+    height: 60,
+    velocity: 0,
+    gravity: 0.35,
+    lift: -7,
+  };
+
+  let pipes = [];
+  const PIPE_WIDTH = 80;
+  const PIPE_GAP = 230;
+
+  let pipeSpeed = 1.2;
+  const speedIncrement = 0.02;
+  const maxSpeed = 5;
+
+  let score = 0;
+  let gameOver = false;
+  let animationId;
+
+  let clouds = [
+    { x: 50, y: 80, radiusX: 30, radiusY: 20, speed: 0.3 },
+    { x: 150, y: 120, radiusX: 50, radiusY: 30, speed: 0.2 },
+    { x: 280, y: 90, radiusX: 40, radiusY: 25, speed: 0.25 }
+  ];
+
+  let particles = [];
+
+  function resetPipes() {
+    pipes = [];
+    const initialX = WIDTH + 100;
+    for(let i=0; i < 3; i++) {
+      let pipeTopHeight = Math.floor(Math.random() * (HEIGHT - PIPE_GAP - 100)) + 50;
+      pipes.push({
+        x: initialX + i * 250,
+        topHeight: pipeTopHeight,
+        bottomY: pipeTopHeight + PIPE_GAP,
+        passed: false
+      });
+    }
+  }
+
+  function drawBackground() {
+    let gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+    gradient.addColorStop(0, '#87ceeb');
+    gradient.addColorStop(1, '#a3d9a5');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    clouds.forEach(cloud => {
+      ctx.beginPath();
+      ctx.ellipse(cloud.x, cloud.y, cloud.radiusX, cloud.radiusY, 0, 0, Math.PI * 2);
+      ctx.ellipse(cloud.x + 40, cloud.y + 10, cloud.radiusX + 15, cloud.radiusY + 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(cloud.x + 80, cloud.y, cloud.radiusX, cloud.radiusY, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function updateClouds() {
+    clouds.forEach(cloud => {
+      cloud.x -= cloud.speed;
+      if (cloud.x + 120 < 0) {
+        cloud.x = WIDTH + 50;
+      }
+    });
+  }
+
+  function drawCow() {
+    if(cowImg.complete) {
+      ctx.drawImage(cowImg, cow.x, cow.y, cow.width, cow.height);
+    } else {
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(cow.x, cow.y, cow.width, cow.height);
+    }
+  }
+
+  function drawPipes() {
+    ctx.fillStyle = '#3a6e18';
+    pipes.forEach(pipe => {
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, HEIGHT - pipe.bottomY);
+      ctx.strokeStyle = '#2a5410';
+      for(let i = 0; i < pipe.topHeight; i += 15) {
+        ctx.beginPath();
+        ctx.moveTo(pipe.x, i);
+        ctx.lineTo(pipe.x + PIPE_WIDTH, i);
+        ctx.stroke();
+      }
+      for(let i = pipe.bottomY; i < HEIGHT; i += 15) {
+        ctx.beginPath();
+        ctx.moveTo(pipe.x, i);
+        ctx.lineTo(pipe.x + PIPE_WIDTH, i);
+        ctx.stroke();
+      }
+    });
+  }
+
+  function createParticles(x, y) {
+    if(particles.length > 100) return;
+    for(let i=0; i<5; i++) {
+      particles.push({
+        x: x,
+        y: y,
+        radius: Math.random() * 3 + 2,
+        color: 'rgba(255,255,255,0.8)',
+        speedX: (Math.random() - 0.5) * 2,
+        speedY: Math.random() * -2 - 1,
+        life: 30
+      });
+    }
+  }
+
+  function drawParticles() {
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = 'white';
+      ctx.shadowBlur = 10;
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      p.x += p.speedX;
+      p.y += p.speedY;
+      p.life--;
+    });
+  }
+
+  function collision() {
+    if(cow.y + cow.height > HEIGHT || cow.y < 0) {
+      return true;
+    }
+    for(const pipe of pipes) {
+      if (
+        cow.x + cow.width > pipe.x &&
+        cow.x < pipe.x + PIPE_WIDTH &&
+        (cow.y < pipe.topHeight || cow.y + cow.height > pipe.bottomY)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    drawBackground();
+    updateClouds();
+
+    cow.velocity += cow.gravity;
+    cow.y += cow.velocity;
+
+    pipes.forEach(pipe => {
+      pipe.x -= pipeSpeed;
+      if (!pipe.passed && pipe.x + PIPE_WIDTH < cow.x) {
+        pipe.passed = true;
+        score++;
+        scoreDisplay.textContent = score;
+        if(pointSound) pointSound.play();
+        createParticles(cow.x + cow.width/2, cow.y + cow.height/2);
+        if(score % 10 === 0 && pipeSpeed < maxSpeed) {
+          pipeSpeed += speedIncrement;
+        }
+      }
+    });
+
+    if(pipes.length > 0 && pipes[0].x + PIPE_WIDTH < 0) {
+      pipes.shift();
+      let pipeTopHeight = Math.floor(Math.random() * (HEIGHT - PIPE_GAP - 100)) + 50;
+      pipes.push({
+        x: pipes[pipes.length -1].x + 250,
+        topHeight: pipeTopHeight,
+        bottomY: pipeTopHeight + PIPE_GAP,
+        passed: false
+      });
+    }
+
+    drawPipes();
+    drawCow();
+    drawParticles();
+
+    if(collision()) {
+      gameOver = true;
+      message.style.display = 'block';
+      startBtn.style.display = 'block';
+      if(hitSound) hitSound.play();
+      return;
+    }
+
+    animationId = requestAnimationFrame(gameLoop);
+  }
+
+  function resetGame() {
+    cow.y = HEIGHT / 2;
+    cow.velocity = 0;
+    pipeSpeed = 1.2;
+    score = 0;
+    scoreDisplay.textContent = score;
+    message.style.display = 'none';
+    startBtn.style.display = 'none';
+    gameOver = false;
+    resetPipes();
+  }
+
+  startBtn.addEventListener('click', () => {
+    resetGame();
+    animationId = requestAnimationFrame(gameLoop);
+  });
+
+  window.addEventListener('click', () => {
+    if(gameOver) return;
+    cow.velocity = cow.lift;
+    if(jumpSound) jumpSound.play();
+  });
+
+  ctx.font = "28px Arial";
+  ctx.fillStyle = "white";
+  ctx.textAlign = "center";
+  ctx.fillText("Click or tap to jump", WIDTH / 2, HEIGHT / 2 - 40);
+})();
+</script>
+</body>
+</html>
